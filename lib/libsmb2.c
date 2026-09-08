@@ -1897,16 +1897,29 @@ fstat_cb_1(struct smb2_context *smb2, int status,
            void *command_data, void *private_data)
 {
         struct stat_cb_data *stat_data = private_data;
-        struct smb2_query_info_reply *rep = command_data;
-        struct smb2_file_all_info *fs = rep->output_buffer;
-        struct smb2_stat_64 *st = stat_data->st;
+        struct smb2_query_info_reply *rep;
+        struct smb2_file_all_info *fs;
+        struct smb2_stat_64 *st;
 
+        /* Check the status BEFORE touching command_data: on any failure path
+         * command_data is NULL, and smb2_destroy_context() completes every
+         * outstanding PDU that way --
+         *     pdu->cb(smb2, SMB2_STATUS_SHUTDOWN, NULL, pdu->cb_data);
+         * -- so a context torn down with an fstat in flight dereferenced NULL
+         * here and took SIGSEGV. Reaching that requires an error to arrive
+         * while a request is outstanding, which is why it presents as a rare,
+         * unreproducible crash rather than an obvious one.
+         */
         if (status != SMB2_STATUS_SUCCESS) {
                 stat_data->cb(smb2, -nterror_to_errno(status),
                        NULL, stat_data->cb_data);
                 free(stat_data);
                 return;
         }
+
+        rep = command_data;
+        fs = rep->output_buffer;
+        st = stat_data->st;
 
         st->smb2_type = SMB2_TYPE_FILE;
         if (fs->basic.file_attributes & SMB2_FILE_ATTRIBUTE_DIRECTORY) {
