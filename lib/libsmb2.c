@@ -738,7 +738,13 @@ session_setup_cb(struct smb2_context *smb2, int status,
 #endif
 
 
-        if (smb2->sign || smb2->seal || smb2->dialect == SMB2_VERSION_0311) {
+        /* Any 3.x dialect, not only 3.1.1: a share carrying
+         * SMB2_SHAREFLAG_ENCRYPT_DATA switches sealing on at TREE_CONNECT,
+         * which is after this point. On 3.0/3.02 the keys were therefore never
+         * derived and the first sealed PDU was built with nothing, so a share
+         * that requires encryption could not be used at all. Costs one key
+         * derivation; 3.1.1 already took this path unconditionally. */
+        if (smb2->sign || smb2->seal || smb2->dialect >= SMB2_VERSION_0300) {
                 uint8_t zero_key[SMB2_KEY_SIZE] = {0};
                 int have_valid_session_key = 1;
 
